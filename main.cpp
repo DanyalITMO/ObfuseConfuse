@@ -27,6 +27,12 @@ std::vector<ZyanU8> readFile(const std::string& file) {
 bool write_to_file(std::string const& path, std::vector<std::string> const& data)
 {
     std::ofstream myfile{path};
+//    myfile << "use64"<<"\n";
+    myfile <<"format ELF64"<<"\n";
+    myfile <<"section '.text' executable"<<"\n";
+    myfile <<"public _start"<<"\n";
+    myfile <<"_start:"<<"\n";
+
     for(auto&& line : data)
     {
         myfile << line<<"\n";
@@ -113,6 +119,9 @@ int main()
     instr_v = shuffle(instr_v);
     write_to_file("list.asm", instr_v);
 
-//    system("");
+    system("fasm list.asm");
+    system("ld list.o -o list.out");
+
+    return 0;
 }
 
