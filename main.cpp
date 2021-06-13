@@ -6,6 +6,7 @@
 #include <iostream>
 #include <random>
 #include <algorithm>
+#include <ctime>
 
 using byte_t = unsigned char;
 
@@ -62,6 +63,32 @@ std::vector<std::string> add_jmp(std::vector<std::string> const& data)
     ret.emplace_back("labelEnd:");
     return ret;
 }
+
+std::vector<std::string> add_junk(std::vector<std::string> const& data) {
+
+    if(data.size() < 3)
+        return {};
+
+    std::vector<std::string> ret = data;
+
+    std::srand(std::time(nullptr));
+
+    int junk_count = std::rand() % (ret.size() - 2);
+
+
+    for(int i = 0; i < junk_count; i++) {
+        int junk_position = std::rand() % (ret.size() - 2);
+        //добавить перепрыгивание этой функции
+        ret.insert(std::begin(ret) + junk_position + 1, "DB 0x12\n");
+    }
+
+//    int junk_position = std::rand() % (ret.size() - 2);
+//    ret.insert(std::begin(ret) + junk_position + 1, "number DB 0x12\n");
+
+
+    return ret;
+}
+
 std::vector<std::string> shuffle(std::vector<std::string> const& data) {
     std::vector<std::string> ret = data;
     auto rng = std::default_random_engine{};
@@ -117,6 +144,8 @@ int main()
 
     instr_v = add_jmp(instr_v);
     instr_v = shuffle(instr_v);
+    instr_v = add_junk(instr_v);
+
     write_to_file("list.asm", instr_v);
 
     system("fasm list.asm");
