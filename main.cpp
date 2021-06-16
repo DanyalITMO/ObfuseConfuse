@@ -7,6 +7,7 @@
 #include <random>
 #include <algorithm>
 #include <ctime>
+#include <langinfo.h>
 
 using byte_t = unsigned char;
 
@@ -24,16 +25,25 @@ std::vector<ZyanU8> readFile(const std::string& file) {
     return buffer;
 }
 
+bool writeToFile(const std::string& file, std::vector<ZyanU8> const& data ) {
+    std::ofstream out(file, std::ios::binary);
+
+    for(auto&& it : data)
+    {
+       out<<it;
+    }
+    return true;
+}
 
 bool write_to_file(std::string const& path, std::vector<std::string> const& data)
 {
     std::ofstream myfile{path};
-//    myfile << "use64"<<"\n";
-    myfile <<"format ELF64"<<"\n";
+    myfile << "use64"<<"\n";
+  /*  myfile <<"format ELF64"<<"\n";
     myfile <<"section '.text' executable"<<"\n";
     myfile <<"public _start"<<"\n";
     myfile <<"_start:"<<"\n";
-
+*/
     for(auto&& line : data)
     {
         myfile << line<<"\n";
@@ -96,14 +106,87 @@ std::vector<std::string> shuffle(std::vector<std::string> const& data) {
     return  ret;
 }
 
+void printHex(std::vector<ZyanU8> const& data)
+{
+    std::cerr<<std::hex;
+
+    for(auto&& it : data)
+    {
+        std::remove_reference<decltype(data)>::type::value_type mask = 0b11110000;
+        std::cerr<<((it & mask) >> 4);
+        std::cerr<<(it & (~mask));
+        std::cerr<<" ";
+    }
+    std::cerr<<std::endl;
+}
+
+int key = 1; // если 8 то вставить 9, в деоде если  после xor 9 cor 8 ==9, то значит было число после xor 9
+
+std::vector<ZyanU8> encode(std::vector<ZyanU8> const& data)
+{
+
+    auto encoded = data;
+
+    std::transform(std::cbegin(data), std::cend(data), std::begin(encoded), [](auto&& it){
+        return it + key;
+    });
+    return encoded;
+}
+
+void generate_shellcode(std::vector<ZyanU8> const& data)
+{
+
+    std::ofstream myfile{"shellcode.asm"};
+
+    myfile <<"format ELF64"<<"\n";
+    myfile <<"section '.text' executable"<<"\n";
+    myfile <<"public _start"<<"\n";
+    myfile <<"_start:"<<"\n";
+    myfile <<"len equ " << data.size()<<"\n";
+    myfile <<"keys.xor1 equ " << key<<"\n";
+    myfile <<"encode_setup:"<<std::endl;
+    myfile <<"xor rcx, rcx"<<std::endl;
+    myfile <<"lea rsi, [payload]"<<std::endl;
+    myfile <<"encode:"<<std::endl;
+    myfile <<"mov al, byte [rsi+rcx]"<<std::endl;
+    myfile <<"sub al, keys.xor1"<<std::endl;
+    myfile <<"mov byte [rsi+rcx], al"<<std::endl;
+    myfile <<"inc rcx"<<std::endl;
+    myfile <<"cmp rcx, len"<<std::endl;
+    myfile <<"jne encode"<<std::endl;
+    myfile <<"jmp  payload"<<std::endl;
+//------
+    myfile <<"section '.data' executable writeable"<<std::endl;
+//--
+
+    myfile <<"payload:"<<std::endl;
+
+    myfile << "db ";
+    for(auto it = std::cbegin(data); it != std::cend(data) - 1; it++)
+    {
+        myfile << static_cast<int>(*it)<<", ";
+    }
+    myfile <<  static_cast<int>(data.back())<<'\n';
+
+    myfile.close();
+
+    system("fasm shellcode.asm");
+    system("ld shellcode.o -o shellcode.out");
+}
+
 int main()
 {
     auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
+//    printHex(bin);
+//    auto data = encode(bin);
+//    printHex(data);
+//    generate_shellcode(data);
+
     auto&& data = &bin[0];
 
-   // Initialize decoder context
+    // Initialize decoder context
     ZydisDecoder decoder;
-     ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
+    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
 
     // Initialize formatter. Only required when you actually plan to do instruction
     // formatting ("disassembling"), like we do here
@@ -137,6 +220,7 @@ int main()
         runtime_address += instruction.length;
     }
 
+
     for(auto&& i : instr_v)
     {
         std::cout<<i<<std::endl;
@@ -149,7 +233,16 @@ int main()
     write_to_file("list.asm", instr_v);
 
     system("fasm list.asm");
-    system("ld list.o -o list.out");
+//    system("ld list.o -o list.out");
+
+
+    //    printHex(bin);
+    bin = readFile("list.bin");
+    auto encoded = encode(bin);
+    printHex(encoded);
+    generate_shellcode(encoded);
+
+    //    writeToFile("/home/mugutdinov/vp-client-nova/graduating/simple_same.bin", data);
 
     return 0;
 }
