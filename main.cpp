@@ -8,24 +8,86 @@
 #include <algorithm>
 #include <ctime>
 #include <langinfo.h>
+#include <sstream>
 
-using byte_t = unsigned char;
+std::string merge(std::vector<std::string> const& listening)
+{
+    std::string ret;
+    for(auto&& line : listening)
+    {
+        ret += line;
+    }
+    return ret;
+}
+
+std::vector<std::string> createCodeForExecutable(std::vector<std::string> const& code, std::vector<std::string> const& data)
+{
+    std::vector<std::string> ret;
+
+    auto add_line = [&ret](std::string const& line){
+        ret.emplace_back(line + "\n");
+    };
+
+#ifdef __linux__
+    add_line("format ELF64");
+    add_line("section '.text' executable");
+    add_line("public _start");
+    add_line("_start:");
+
+#elif _WIN32
+    // windows code goes here
+#else
+
+#endif
+
+    for(auto&& line : code)
+    {
+        add_line(line);
+    }
+
+    if(!data.empty())
+    {
+        add_line("section '.data' executable writeable");
+
+        for(auto&& line : data)
+        {
+            add_line(line);
+        }
+    }
+
+    return ret;
+}
+
+void fasm(std::string const& filename)
+{
+    system(std::string{"fasm " + filename}.c_str());
+}
+void build(std::string const& filename)
+{
+    auto dot_position = filename.find('.');
+    if(dot_position == std::string::npos)
+    {
+        std::cerr<<"Error: could not find dot in filename"<<std::endl;
+        return;
+    }
+
+    auto name = filename.substr(0, dot_position);
+    std::string fasm = "fasm " + name + ".asm";
+    system(fasm.c_str());
+
+    std::string ld = "ld " + name + ".o " + "-o " + name + ".out";
+    system("ld shellcode.o -o shellcode.out");
+}
 
 std::vector<ZyanU8> readFile(const std::string& file) {
     std::ifstream input(file, std::ios::binary);
 
     // copies all data into buffer
     std::vector<ZyanU8> buffer(std::istreambuf_iterator<char>(input), {});
-    /*std::cout<<std::hex;
-    for(auto&& it : buffer)
-    {
-       std::cout<<it;
-    }
-    std::cout<<std::endl;*/
     return buffer;
 }
 
-bool writeToFile(const std::string& file, std::vector<ZyanU8> const& data ) {
+bool writeToBinFile(const std::string& file, std::vector<ZyanU8> const& data ) {
     std::ofstream out(file, std::ios::binary);
 
     for(auto&& it : data)
@@ -39,16 +101,13 @@ bool write_to_file(std::string const& path, std::vector<std::string> const& data
 {
     std::ofstream myfile{path};
     myfile << "use64"<<"\n";
-  /*  myfile <<"format ELF64"<<"\n";
-    myfile <<"section '.text' executable"<<"\n";
-    myfile <<"public _start"<<"\n";
-    myfile <<"_start:"<<"\n";
-*/
+
     for(auto&& line : data)
     {
         myfile << line<<"\n";
     }
     myfile.close();
+    return true;
 }
 
 std::vector<std::string> add_jmp(std::vector<std::string> const& data)
@@ -67,8 +126,6 @@ std::vector<std::string> add_jmp(std::vector<std::string> const& data)
         else
             new_str += '\n' + std::string("jmp ") + "labelEnd";
         ret.push_back(new_str);
-//        if(i < data.size() - 1)
-//        ret.push_back(std::string("jmp ") + "label" + std::to_string(i + 1));
     }
     ret.emplace_back("labelEnd:");
     return ret;
@@ -124,7 +181,6 @@ int key = 1; // если 8 то вставить 9, в деоде если  по
 
 std::vector<ZyanU8> encode(std::vector<ZyanU8> const& data)
 {
-
     auto encoded = data;
 
     std::transform(std::cbegin(data), std::cend(data), std::begin(encoded), [](auto&& it){
@@ -133,55 +189,47 @@ std::vector<ZyanU8> encode(std::vector<ZyanU8> const& data)
     return encoded;
 }
 
-void generate_shellcode(std::vector<ZyanU8> const& data)
+void generateShellcode(std::vector<ZyanU8> const& payload)
 {
+    std::string filename = "shellcode.asm";
+    std::ofstream myfile{filename};
 
-    std::ofstream myfile{"shellcode.asm"};
+    std::vector<std::string> code;
+    code.emplace_back("len equ " + std::to_string(payload.size()));
+    code.emplace_back("keys.xor1 equ " + std::to_string(key));
+    code.emplace_back("encode_setup:");
+    code.emplace_back("xor rcx, rcx");
+    code.emplace_back("lea rsi, [payload]");
+    code.emplace_back("encode:");
+    code.emplace_back("mov al, byte [rsi+rcx]");
+    code.emplace_back("sub al, keys.xor1");
+    code.emplace_back("mov byte [rsi+rcx], al");
+    code.emplace_back("inc rcx");
+    code.emplace_back("cmp rcx, len");
+    code.emplace_back("jne encode");
+    code.emplace_back("jmp payload");
 
-    myfile <<"format ELF64"<<"\n";
-    myfile <<"section '.text' executable"<<"\n";
-    myfile <<"public _start"<<"\n";
-    myfile <<"_start:"<<"\n";
-    myfile <<"len equ " << data.size()<<"\n";
-    myfile <<"keys.xor1 equ " << key<<"\n";
-    myfile <<"encode_setup:"<<std::endl;
-    myfile <<"xor rcx, rcx"<<std::endl;
-    myfile <<"lea rsi, [payload]"<<std::endl;
-    myfile <<"encode:"<<std::endl;
-    myfile <<"mov al, byte [rsi+rcx]"<<std::endl;
-    myfile <<"sub al, keys.xor1"<<std::endl;
-    myfile <<"mov byte [rsi+rcx], al"<<std::endl;
-    myfile <<"inc rcx"<<std::endl;
-    myfile <<"cmp rcx, len"<<std::endl;
-    myfile <<"jne encode"<<std::endl;
-    myfile <<"jmp  payload"<<std::endl;
-//------
-    myfile <<"section '.data' executable writeable"<<std::endl;
-//--
+    std::vector<std::string> data;
+    data.emplace_back("payload:");
 
-    myfile <<"payload:"<<std::endl;
-
-    myfile << "db ";
-    for(auto it = std::cbegin(data); it != std::cend(data) - 1; it++)
+    std::string dpayload = "db ";
+    for(auto it = std::cbegin(payload); it != std::cend(payload) - 1; it++)
     {
-        myfile << static_cast<int>(*it)<<", ";
+        dpayload += std::to_string(static_cast<int>(*it)) + ", ";
     }
-    myfile <<  static_cast<int>(data.back())<<'\n';
+    dpayload += std::to_string(static_cast<int>(payload.back()));
+    data.push_back(dpayload);
 
+    auto listening = createCodeForExecutable(code, data);
+
+    myfile<<merge(listening);
     myfile.close();
 
-    system("fasm shellcode.asm");
-    system("ld shellcode.o -o shellcode.out");
+    build(filename);
 }
 
-int main()
+std::vector<std::string> decode(std::vector<ZyanU8> const& bin)
 {
-    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
-//    printHex(bin);
-//    auto data = encode(bin);
-//    printHex(data);
-//    generate_shellcode(data);
-
     auto&& data = &bin[0];
 
     // Initialize decoder context
@@ -205,21 +253,27 @@ int main()
     while (ZYAN_SUCCESS(ZydisDecoderDecodeBuffer(&decoder, data/*bin.data()*/ + offset, length - offset,
                                                  &instruction)))
     {
-        // Print current instruction pointer.
-//        printf("%016" PRIX64 "  ", runtime_address);
-
-        // Format & print the binary instruction structure to human readable format
         char buffer[256];
         ZydisFormatterFormatInstruction(&formatter, &instruction, buffer, sizeof(buffer),
                                         runtime_address);
 
-
-//        puts(buffer);
         instr_v.emplace_back(buffer);
         offset += instruction.length;
         runtime_address += instruction.length;
     }
 
+    return instr_v;
+}
+
+int main()
+{
+    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
+//    printHex(bin);
+//    auto data = encode(bin);
+//    printHex(data);
+//    generateShellcode(data);
+
+    auto instr_v = decode(bin);
 
     for(auto&& i : instr_v)
     {
@@ -232,7 +286,7 @@ int main()
 
     write_to_file("list.asm", instr_v);
 
-    system("fasm list.asm");
+    fasm("list.asm");
 //    system("ld list.o -o list.out");
 
 
@@ -240,7 +294,7 @@ int main()
     bin = readFile("list.bin");
     auto encoded = encode(bin);
     printHex(encoded);
-    generate_shellcode(encoded);
+    generateShellcode(encoded);
 
     //    writeToFile("/home/mugutdinov/vp-client-nova/graduating/simple_same.bin", data);
 
