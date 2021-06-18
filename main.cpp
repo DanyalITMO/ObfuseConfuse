@@ -9,6 +9,7 @@
 #include <ctime>
 #include <langinfo.h>
 #include <sstream>
+#include <cstring>
 
 std::string merge(std::vector<std::string> const& listening)
 {
@@ -170,23 +171,81 @@ void printHex(std::vector<ZyanU8> const& data)
     for(auto&& it : data)
     {
         std::remove_reference<decltype(data)>::type::value_type mask = 0b11110000;
+        std::cerr<<"0x";
         std::cerr<<((it & mask) >> 4);
         std::cerr<<(it & (~mask));
-        std::cerr<<" ";
+        std::cerr<<", ";
     }
     std::cerr<<std::endl;
 }
 
-int key = 1; // если 8 то вставить 9, в деоде если  после xor 9 cor 8 ==9, то значит было число после xor 9
-
+int key1 = 8; // если 8 то вставить 9, в деоде если  после xor 9 cor 8 ==9, то значит было число после xor 9
+int key2 = 9;
 std::vector<ZyanU8> encode(std::vector<ZyanU8> const& data)
 {
-    auto encoded = data;
+    std::vector<ZyanU8> encoded;
 
-    std::transform(std::cbegin(data), std::cend(data), std::begin(encoded), [](auto&& it){
-        return it + key;
-    });
+    /*std::transform(std::cbegin(data), std::cend(data), std::begin(encoded), [](auto&& it){
+        return  (it != key1) ? it ^ key1: it ^ key2;
+    });*/
+
+    for(auto it :data)
+    {
+        if(it == key1)
+        {
+            encoded.push_back(it ^ key2);
+            encoded.push_back(1);
+        }
+        else if(it == key2)
+        {
+            encoded.push_back(it ^ key1);
+            encoded.push_back(2);
+        }
+        else
+        {
+            encoded.push_back(it ^ key1);
+        }
+
+    }
     return encoded;
+}
+
+std::vector<ZyanU8> decode(std::vector<ZyanU8> const& data)
+{
+    std::vector<ZyanU8> decoded;
+
+    for(auto it = std::begin(data); it != std::end(data); it++)
+    {
+//        std::cerr<<"current value "<<(uint)*it<<std::endl;/*
+//        mov ax, key1
+//        xor ax, key2
+//        cmp ax, *it
+
+//        */
+        if(*it == (key1 ^ key2))
+        {
+            auto variant = *(it+1);
+            if(variant == 1)
+            {
+                decoded.push_back(*it ^ key2);
+            }
+            else if(variant == 2)
+            {
+                decoded.push_back(*it ^ key1);
+            }
+            else
+            {
+                std::cerr<<"Error decoding variant";
+            }
+            it++;
+        }
+        else
+        {
+            decoded.push_back(*it ^ key1);
+        }
+    }
+
+    return decoded;
 }
 
 void generateShellcode(std::vector<ZyanU8> const& payload)
@@ -196,7 +255,7 @@ void generateShellcode(std::vector<ZyanU8> const& payload)
 
     std::vector<std::string> code;
     code.emplace_back("len equ " + std::to_string(payload.size()));
-    code.emplace_back("keys.xor1 equ " + std::to_string(key));
+//    code.emplace_back("keys.xor1 equ " + std::to_string(key));
     code.emplace_back("encode_setup:");
     code.emplace_back("xor rcx, rcx");
     code.emplace_back("lea rsi, [payload]");
@@ -228,7 +287,7 @@ void generateShellcode(std::vector<ZyanU8> const& payload)
     build(filename);
 }
 
-std::vector<std::string> decode(std::vector<ZyanU8> const& bin)
+std::vector<std::string> decodeBin(std::vector<ZyanU8> const& bin)
 {
     auto&& data = &bin[0];
 
@@ -267,13 +326,37 @@ std::vector<std::string> decode(std::vector<ZyanU8> const& bin)
 
 int main()
 {
-    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
+    writeToBinFile("/home/mugutdinov/vp-client-nova/graduating/simple_bytes.bin", {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33});
+//    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
+    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple_bytes.bin");
 //    printHex(bin);
-//    auto data = encode(bin);
-//    printHex(data);
-//    generateShellcode(data);
+    for(auto it : bin)
+    {
+        std::cerr<<std::hex<<(uint)it<<" ";
+    }
 
-    auto instr_v = decode(bin);
+    /*    for(auto it : bin)
+    {
+        std::cerr<<std::hex<<"0x"<<(uint)it<<", ";
+    }
+     * */
+    std::cerr<<std::endl;
+    auto data = encode(bin);
+    printHex(data);
+    auto decoded= decode(data);
+//    printHex(decoded);
+
+    if(0 == memcmp(bin.data(), decoded.data(), decoded.size()))
+    {
+        std::cerr<<"equal";
+    }
+    else
+    {
+        std::cerr<<"!!!not equal";
+    }
+            //    generateShellcode(data);
+/*
+    auto instr_v = decodeBin(bin);
 
     for(auto&& i : instr_v)
     {
@@ -297,7 +380,7 @@ int main()
     generateShellcode(encoded);
 
     //    writeToFile("/home/mugutdinov/vp-client-nova/graduating/simple_same.bin", data);
-
+*/
     return 0;
 }
 
