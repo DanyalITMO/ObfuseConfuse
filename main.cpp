@@ -10,6 +10,12 @@
 #include <langinfo.h>
 #include <sstream>
 #include <cstring>
+#include <memory>
+#include "Obfuscators/Text/Jumper.h"
+#include "Obfuscators/Text/Junk.h"
+#include "Obfuscators/Text/Shuffler.h"
+#include "Obfuscators/Bin/AbstractBinObfuscator.h"
+#include "Obfuscators/Bin/TwoXor.h"
 
 std::string merge(std::vector<std::string> const& listening)
 {
@@ -87,11 +93,11 @@ void build(std::string const& filename)
     system("ld shellcode.o -o shellcode.out");
 }
 
-std::vector<ZyanU8> readFile(const std::string& file) {
+std::vector<byte> readFile(const std::string& file) {
     std::ifstream input(file, std::ios::binary);
 
     // copies all data into buffer
-    std::vector<ZyanU8> buffer(std::istreambuf_iterator<char>(input), {});
+    std::vector<byte> buffer(std::istreambuf_iterator<char>(input), {});
     return buffer;
 }
 
@@ -117,65 +123,7 @@ bool writeTextFile(std::string const& path, std::vector<std::string> const& data
     return true;
 }
 
-std::vector<std::string> add_jmp(std::vector<std::string> const& data)
-{
-    if(data.empty())
-        return {};
-
-    std::vector<std::string> ret;
-    ret.emplace_back("jmp label0");
-    for(int i = 0; i < data.size(); i++)
-    {
-        std::string new_str;
-        new_str = "label" + std::to_string(i)+ ": " + data[i];
-        if(i < data.size() - 1)
-            new_str += '\n' + std::string("jmp ") + "label" + std::to_string(i + 1);
-        else
-            new_str += '\n' + std::string("jmp ") + "labelEnd";
-        ret.push_back(new_str);
-    }
-    ret.emplace_back("labelEnd:");
-    return ret;
-}
-
-std::vector<std::string> add_junk(std::vector<std::string> const& data) {
-
-    if(data.size() < 3)
-        return {};
-
-    std::vector<std::string> ret = data;
-
-    std::srand(std::time(nullptr));
-
-    int junk_count = std::rand() % (ret.size() - 2);
-
-
-    for(int i = 0; i < junk_count; i++) {
-        int junk_position = std::rand() % (ret.size() - 2);
-        std::string label = "l_" + std::string(__func__) + std::to_string(i);
-        std::string new_str = "jmp " + label + "\n";
-        new_str += "DB 0x12\n";
-        new_str += label + ": \n";
-
-        ret.insert(std::begin(ret) + junk_position + 1, new_str);
-
-    }
-
-//    int junk_position = std::rand() % (ret.size() - 2);
-//    ret.insert(std::begin(ret) + junk_position + 1, "number DB 0x12\n");
-
-
-    return ret;
-}
-
-std::vector<std::string> shuffle(std::vector<std::string> const& data) {
-    std::vector<std::string> ret = data;
-    auto rng = std::default_random_engine{};
-    std::shuffle(std::begin(ret)+1, std::end(ret)-1, rng);
-    return  ret;
-}
-
-void printHex(std::vector<ZyanU8> const& data)
+void printHex(std::vector<byte> const& data)
 {
     std::cerr<<std::hex;
 
@@ -190,154 +138,7 @@ void printHex(std::vector<ZyanU8> const& data)
     std::cerr<<std::endl;
 }
 
-int key1 = 8; // если 8 то вставить 9, в деоде если  после xor 9 cor 8 ==9, то значит было число после xor 9
-int key2 = 9;
-std::vector<ZyanU8> encode(std::vector<ZyanU8> const& data)
-{
-    std::vector<ZyanU8> encoded;
-
-    /*std::transform(std::cbegin(data), std::cend(data), std::begin(encoded), [](auto&& it){
-        return  (it != key1) ? it ^ key1: it ^ key2;
-    });*/
-
-    for(auto it :data)
-    {
-        if(it == key1)
-        {
-            encoded.push_back(it ^ key2);
-            encoded.push_back(1);
-        }
-        else if(it == key2)
-        {
-            encoded.push_back(it ^ key1);
-            encoded.push_back(2);
-        }
-        else
-        {
-            encoded.push_back(it ^ key1);
-        }
-
-    }
-    return encoded;
-}
-
-std::vector<ZyanU8> decode(std::vector<ZyanU8> const& data)
-{
-    std::vector<ZyanU8> decoded;
-
-    for(auto it = std::begin(data); it != std::end(data); it++)
-    {
-        if(*it == (key1 ^ key2))
-        {
-            auto variant = *(it+1);
-            if(variant == 1)
-            {
-                decoded.push_back(*it ^ key2);
-            }
-            else if(variant == 2)
-            {
-                decoded.push_back(*it ^ key1);
-            }
-            else
-            {
-                std::cerr<<"Error decoding variant";
-            }
-            it++;
-        }
-        else
-        {
-            decoded.push_back(*it ^ key1);
-        }
-    }
-
-    return decoded;
-}
-
-std::pair<std::vector<std::string>, std::vector<std::string>> generateShellcode(std::vector<ZyanU8> const& payload)
-{
-    std::vector<std::string> code;
-    code.emplace_back("keys.xor1 equ " + std::to_string(key1));
-    code.emplace_back("keys.xor2 equ " + std::to_string(key2));
-    code.emplace_back("xor_keys equ keys.xor1 xor keys.xor2");
-    code.emplace_back("len equ " + std::to_string(payload.size()));
-    code.emplace_back(";rsi base, rbx - offset from, rdx count");
-    code.emplace_back("shiftBytes:");
-    code.emplace_back("push rax");
-    code.emplace_back("push rbx");
-    code.emplace_back("push rdx");
-    code.emplace_back("push rcx");
-    code.emplace_back("xor rcx, rcx");
-    code.emplace_back("loop_point:");
-    code.emplace_back("mov al, byte [rsi+rbx]");
-    code.emplace_back("XCHG al, byte [rsi+rbx+1]");
-    code.emplace_back("mov byte [rsi+rbx], al");
-    code.emplace_back("inc rbx");
-    code.emplace_back("inc rcx");
-    code.emplace_back("cmp rcx, rdx");
-    code.emplace_back("jnz loop_point");
-    code.emplace_back("pop rcx");
-    code.emplace_back("pop rdx");
-    code.emplace_back("pop rbx");
-    code.emplace_back("pop rax");
-    code.emplace_back("ret");
-    code.emplace_back("_start:");
-    code.emplace_back("encode_setup:");
-    code.emplace_back("xor rcx, rcx");
-    code.emplace_back("lea rsi, [payload]");
-    code.emplace_back("mov r8, len");
-    code.emplace_back("encode:");
-    code.emplace_back("mov al, byte [rsi+rcx]");
-    code.emplace_back("cmp al, xor_keys");
-    code.emplace_back("je variant");
-    code.emplace_back("jne basic");
-    code.emplace_back("variant:");
-    code.emplace_back("mov ah, byte [rsi+rcx+1]");
-    code.emplace_back("cmp ah, 1");
-    code.emplace_back("je first");
-    code.emplace_back("jne second");
-    code.emplace_back("first:");
-    code.emplace_back("xor al, keys.xor2");
-    code.emplace_back("jmp end_of_variant");
-    code.emplace_back("second:");
-    code.emplace_back("xor al, keys.xor1");
-    code.emplace_back("jmp end_of_variant");
-    code.emplace_back("end_of_variant:");
-    code.emplace_back("mov byte [rsi+rcx], al");
-    code.emplace_back("mov byte [rsi+rcx+1], 0x90");
-    code.emplace_back(";rsi base, rbx - offset from, rdx count");
-    code.emplace_back("mov rbx, rcx");
-    code.emplace_back("inc rbx ;from next byte");
-    code.emplace_back("mov rdx, len");
-    code.emplace_back("sub rdx, rcx");
-    code.emplace_back("sub rdx, 2 ; -1 for count from zero, -1 for rcx");
-    code.emplace_back("call shiftBytes");
-    code.emplace_back("dec r8");
-    code.emplace_back("jmp end_of_cycle");
-    code.emplace_back("basic:");
-    code.emplace_back("xor al, keys.xor1");
-    code.emplace_back("mov byte [rsi+rcx], al");
-    code.emplace_back("jmp end_of_cycle");
-    code.emplace_back("end_of_cycle:");
-    code.emplace_back("inc rcx");
-    code.emplace_back("cmp rcx, r8");
-    code.emplace_back("jne encode");
-    code.emplace_back("jmp payload");
-
-    std::vector<std::string> data;
-    data.emplace_back("payload:");
-
-    std::string dpayload = "db ";
-    for(auto it = std::cbegin(payload); it != std::cend(payload) - 1; it++)
-    {
-        dpayload += std::to_string(static_cast<int>(*it)) + ", ";
-    }
-    dpayload += std::to_string(static_cast<int>(payload.back()));
-    data.push_back(dpayload);
-
-    return {code, data};
-}
-
-std::vector<std::string> decodeBin(std::vector<ZyanU8> const& bin)
+std::vector<std::string> decodeBin(std::vector<byte> const& bin)
 {
     auto&& data = &bin[0];
 
@@ -388,20 +189,28 @@ int main()
         std::cout<<i<<std::endl;
     }
 
-    instr_v = add_jmp(instr_v);
-    instr_v = shuffle(instr_v);
-    instr_v = add_junk(instr_v);
+    std::vector<std::unique_ptr<AbstractTextObfuscator>> textObfuscators;
+    textObfuscators.push_back(std::make_unique<Jumper>());
+    textObfuscators.push_back(std::make_unique<Shuffler>());
+    textObfuscators.push_back(std::make_unique<Junk>());
+
+    for(auto&& it : textObfuscators)
+    {
+        instr_v = it->process(instr_v);
+    }
 
     writeTextFile("list.asm", createCodeFor64(instr_v));
 
     fasm("list.asm");
-//    system("ld list.o -o list.out");
 
     bin = readFile("list.bin");
-    auto encoded = encode(bin);
+
+//    std::vector<std::unique_ptr<AbstractBinObfuscator>> binObfuscators;
+    std::unique_ptr<TwoXor> binObfuscator{std::make_unique<TwoXor>()};
+    auto encoded = binObfuscator->encode(bin);
     printHex(encoded);
 
-    auto code_data = generateShellcode(encoded);
+    auto code_data = binObfuscator->addAsmStub(encoded);
     auto listening = createCodeForExecutable(code_data.first, code_data.second);
 //    std::vector<std::string> c = code_data.first;
 //    c.insert(std::end(c), std::begin(code_data.second), std::end(code_data.second));
@@ -409,7 +218,7 @@ int main()
 
     writeTextFile("shellcode.asm", listening);
     build("shellcode.asm");
-    auto decoded = decode(encoded);
+//    auto decoded = decode(encoded);
 
     return 0;
 }
