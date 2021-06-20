@@ -21,6 +21,13 @@ std::string merge(std::vector<std::string> const& listening)
     return ret;
 }
 
+std::vector<std::string> createCodeFor64(std::vector<std::string> const& code )
+{
+    auto ret = code;
+    ret.insert(std::begin(ret),"use64");
+    return ret;
+}
+
 std::vector<std::string> createCodeForExecutable(std::vector<std::string> const& code, std::vector<std::string> const& data)
 {
     std::vector<std::string> ret;
@@ -88,7 +95,7 @@ std::vector<ZyanU8> readFile(const std::string& file) {
     return buffer;
 }
 
-bool writeToBinFile(const std::string& file, std::vector<ZyanU8> const& data ) {
+bool writeBinFile(const std::string& file, std::vector<ZyanU8> const& data ) {
     std::ofstream out(file, std::ios::binary);
 
     for(auto&& it : data)
@@ -98,10 +105,9 @@ bool writeToBinFile(const std::string& file, std::vector<ZyanU8> const& data ) {
     return true;
 }
 
-bool write_to_file(std::string const& path, std::vector<std::string> const& data)
+bool writeTextFile(std::string const& path, std::vector<std::string> const& data)
 {
     std::ofstream myfile{path};
-    myfile << "use64"<<"\n";
 
     for(auto&& line : data)
     {
@@ -247,11 +253,8 @@ std::vector<ZyanU8> decode(std::vector<ZyanU8> const& data)
     return decoded;
 }
 
-void generateShellcode(std::vector<ZyanU8> const& payload)
+std::pair<std::vector<std::string>, std::vector<std::string>> generateShellcode(std::vector<ZyanU8> const& payload)
 {
-    std::string filename = "shellcode.asm";
-    std::ofstream myfile{filename};
-
     std::vector<std::string> code;
     code.emplace_back("keys.xor1 equ " + std::to_string(key1));
     code.emplace_back("keys.xor2 equ " + std::to_string(key2));
@@ -331,12 +334,7 @@ void generateShellcode(std::vector<ZyanU8> const& payload)
     dpayload += std::to_string(static_cast<int>(payload.back()));
     data.push_back(dpayload);
 
-    auto listening = createCodeForExecutable(code, data);
-
-    myfile<<merge(listening);
-    myfile.close();
-
-    build(filename);
+    return {code, data};
 }
 
 std::vector<std::string> decodeBin(std::vector<ZyanU8> const& bin)
@@ -394,16 +392,23 @@ int main()
     instr_v = shuffle(instr_v);
     instr_v = add_junk(instr_v);
 
-    write_to_file("list.asm", instr_v);
+    writeTextFile("list.asm", createCodeFor64(instr_v));
 
     fasm("list.asm");
 //    system("ld list.o -o list.out");
 
     bin = readFile("list.bin");
-
     auto encoded = encode(bin);
+    printHex(encoded);
 
-    generateShellcode(encoded);
+    auto code_data = generateShellcode(encoded);
+    auto listening = createCodeForExecutable(code_data.first, code_data.second);
+//    std::vector<std::string> c = code_data.first;
+//    c.insert(std::end(c), std::begin(code_data.second), std::end(code_data.second));
+//    auto listening = createCodeFor64(c);
+
+    writeTextFile("shellcode.asm", listening);
+    build("shellcode.asm");
     auto decoded = decode(encoded);
 
     return 0;
