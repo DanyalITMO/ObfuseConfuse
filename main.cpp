@@ -33,7 +33,7 @@ std::vector<std::string> createCodeForExecutable(std::vector<std::string> const&
     add_line("format ELF64");
     add_line("section '.text' executable");
     add_line("public _start");
-    add_line("_start:");
+//    add_line("_start:");
 
 #elif _WIN32
     // windows code goes here
@@ -146,8 +146,13 @@ std::vector<std::string> add_junk(std::vector<std::string> const& data) {
 
     for(int i = 0; i < junk_count; i++) {
         int junk_position = std::rand() % (ret.size() - 2);
-        //добавить перепрыгивание этой функции
-        ret.insert(std::begin(ret) + junk_position + 1, "DB 0x12\n");
+        std::string label = "l_" + std::string(__func__) + std::to_string(i);
+        std::string new_str = "jmp " + label + "\n";
+        new_str += "DB 0x12\n";
+        new_str += label + ": \n";
+
+        ret.insert(std::begin(ret) + junk_position + 1, new_str);
+
     }
 
 //    int junk_position = std::rand() % (ret.size() - 2);
@@ -216,12 +221,6 @@ std::vector<ZyanU8> decode(std::vector<ZyanU8> const& data)
 
     for(auto it = std::begin(data); it != std::end(data); it++)
     {
-//        std::cerr<<"current value "<<(uint)*it<<std::endl;/*
-//        mov ax, key1
-//        xor ax, key2
-//        cmp ax, *it
-
-//        */
         if(*it == (key1 ^ key2))
         {
             auto variant = *(it+1);
@@ -254,17 +253,70 @@ void generateShellcode(std::vector<ZyanU8> const& payload)
     std::ofstream myfile{filename};
 
     std::vector<std::string> code;
+    code.emplace_back("keys.xor1 equ " + std::to_string(key1));
+    code.emplace_back("keys.xor2 equ " + std::to_string(key2));
+    code.emplace_back("xor_keys equ keys.xor1 xor keys.xor2");
     code.emplace_back("len equ " + std::to_string(payload.size()));
-//    code.emplace_back("keys.xor1 equ " + std::to_string(key));
+    code.emplace_back(";rsi base, rbx - offset from, rdx count");
+    code.emplace_back("shiftBytes:");
+    code.emplace_back("push rax");
+    code.emplace_back("push rbx");
+    code.emplace_back("push rdx");
+    code.emplace_back("push rcx");
+    code.emplace_back("xor rcx, rcx");
+    code.emplace_back("loop_point:");
+    code.emplace_back("mov al, byte [rsi+rbx]");
+    code.emplace_back("XCHG al, byte [rsi+rbx+1]");
+    code.emplace_back("mov byte [rsi+rbx], al");
+    code.emplace_back("inc rbx");
+    code.emplace_back("inc rcx");
+    code.emplace_back("cmp rcx, rdx");
+    code.emplace_back("jnz loop_point");
+    code.emplace_back("pop rcx");
+    code.emplace_back("pop rdx");
+    code.emplace_back("pop rbx");
+    code.emplace_back("pop rax");
+    code.emplace_back("ret");
+    code.emplace_back("_start:");
     code.emplace_back("encode_setup:");
     code.emplace_back("xor rcx, rcx");
     code.emplace_back("lea rsi, [payload]");
+    code.emplace_back("mov r8, len");
     code.emplace_back("encode:");
     code.emplace_back("mov al, byte [rsi+rcx]");
-    code.emplace_back("sub al, keys.xor1");
+    code.emplace_back("cmp al, xor_keys");
+    code.emplace_back("je variant");
+    code.emplace_back("jne basic");
+    code.emplace_back("variant:");
+    code.emplace_back("mov ah, byte [rsi+rcx+1]");
+    code.emplace_back("cmp ah, 1");
+    code.emplace_back("je first");
+    code.emplace_back("jne second");
+    code.emplace_back("first:");
+    code.emplace_back("xor al, keys.xor2");
+    code.emplace_back("jmp end_of_variant");
+    code.emplace_back("second:");
+    code.emplace_back("xor al, keys.xor1");
+    code.emplace_back("jmp end_of_variant");
+    code.emplace_back("end_of_variant:");
     code.emplace_back("mov byte [rsi+rcx], al");
+    code.emplace_back("mov byte [rsi+rcx+1], 0x90");
+    code.emplace_back(";rsi base, rbx - offset from, rdx count");
+    code.emplace_back("mov rbx, rcx");
+    code.emplace_back("inc rbx ;from next byte");
+    code.emplace_back("mov rdx, len");
+    code.emplace_back("sub rdx, rcx");
+    code.emplace_back("sub rdx, 2 ; -1 for count from zero, -1 for rcx");
+    code.emplace_back("call shiftBytes");
+    code.emplace_back("dec r8");
+    code.emplace_back("jmp end_of_cycle");
+    code.emplace_back("basic:");
+    code.emplace_back("xor al, keys.xor1");
+    code.emplace_back("mov byte [rsi+rcx], al");
+    code.emplace_back("jmp end_of_cycle");
+    code.emplace_back("end_of_cycle:");
     code.emplace_back("inc rcx");
-    code.emplace_back("cmp rcx, len");
+    code.emplace_back("cmp rcx, r8");
     code.emplace_back("jne encode");
     code.emplace_back("jmp payload");
 
@@ -326,36 +378,11 @@ std::vector<std::string> decodeBin(std::vector<ZyanU8> const& bin)
 
 int main()
 {
-    writeToBinFile("/home/mugutdinov/vp-client-nova/graduating/simple_bytes.bin", {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33});
-//    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
-    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple_bytes.bin");
-//    printHex(bin);
-    for(auto it : bin)
-    {
-        std::cerr<<std::hex<<(uint)it<<" ";
-    }
 
-    /*    for(auto it : bin)
-    {
-        std::cerr<<std::hex<<"0x"<<(uint)it<<", ";
-    }
-     * */
-    std::cerr<<std::endl;
-    auto data = encode(bin);
-    printHex(data);
-    auto decoded= decode(data);
-//    printHex(decoded);
+//    writeToBinFile("/home/mugutdinov/vp-client-nova/graduating/simple_bytes.bin", {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33});
+    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple.bin");
+//    auto bin = readFile("/home/mugutdinov/vp-client-nova/graduating/simple_bytes.bin");
 
-    if(0 == memcmp(bin.data(), decoded.data(), decoded.size()))
-    {
-        std::cerr<<"equal";
-    }
-    else
-    {
-        std::cerr<<"!!!not equal";
-    }
-            //    generateShellcode(data);
-/*
     auto instr_v = decodeBin(bin);
 
     for(auto&& i : instr_v)
@@ -372,15 +399,13 @@ int main()
     fasm("list.asm");
 //    system("ld list.o -o list.out");
 
-
-    //    printHex(bin);
     bin = readFile("list.bin");
-    auto encoded = encode(bin);
-    printHex(encoded);
-    generateShellcode(encoded);
 
-    //    writeToFile("/home/mugutdinov/vp-client-nova/graduating/simple_same.bin", data);
-*/
+    auto encoded = encode(bin);
+
+    generateShellcode(encoded);
+    auto decoded = decode(encoded);
+
     return 0;
 }
 
