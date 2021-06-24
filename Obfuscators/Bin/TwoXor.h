@@ -12,7 +12,7 @@ public:
     TwoXor() = default;
     std::vector<byte> encode(std::vector<byte> const &data) override;
     std::vector<byte> decode(std::vector<byte> const &data) override;
-    std::pair<std::vector<std::string>, std::vector<std::string>> addAsmStub(std::vector<byte> const &payload) override;
+    ProgramListing addAsmStub(std::vector<byte> const &payload) override;
 
 private:
     int key1 = 8;

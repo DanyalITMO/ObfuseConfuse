@@ -9,10 +9,10 @@
 #include <fstream>
 #include <Zydis/Zydis.h>
 
-std::string merge(std::vector<std::string> const& listening)
+std::string merge(std::vector<std::string> const& listing)
 {
     std::string ret;
-    for(auto&& line : listening)
+    for(auto&& line : listing)
     {
         ret += line;
     }
@@ -26,7 +26,7 @@ std::vector<std::string> createCodeFor64(std::vector<std::string> const& code )
     return ret;
 }
 
-std::vector<std::string> createCodeForExecutable(std::vector<std::string> const& code, std::vector<std::string> const& data)
+std::vector<std::string> createCodeForExecutable(ProgramListing const& listing, bool place_data_in_code)
 {
     std::vector<std::string> ret;
 
@@ -49,20 +49,35 @@ std::vector<std::string> createCodeForExecutable(std::vector<std::string> const&
     // windows code goes here
 #endif
 
-    for(auto&& line : code)
+    for(auto&& line : listing.code_before_start)
     {
         add_line(line);
     }
 
+#ifdef __linux__
+    add_line("_start:");
+
+#elif _WIN32
+    add_line("start:");
+    // windows code goes here
+#endif
+
+    for(auto&& line : listing.code_after_start)
+    {
+        add_line(line);
+    }
 //#ifdef _WIN32
 //    add_line(".end start");
 //#endif
 
-    if(!data.empty())
+    if(!listing.data.empty())
     {
-//        add_line("section '.data' executable writeable");
+        if(!place_data_in_code)
+        {
+            add_line("section '.data' executable writeable");
+        }
 
-        for(auto&& line : data)
+        for(auto&& line : listing.data)
         {
             add_line(line);
         }
