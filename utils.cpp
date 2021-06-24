@@ -31,7 +31,7 @@ std::vector<std::string> createCodeForExecutable(std::vector<std::string> const&
     std::vector<std::string> ret;
 
     auto add_line = [&ret](std::string const& line){
-        ret.emplace_back(line + "\n");
+        ret.emplace_back(line /*+ "\n"*/);
     };
 
 #ifdef __linux__
@@ -41,9 +41,12 @@ std::vector<std::string> createCodeForExecutable(std::vector<std::string> const&
 //    add_line("_start:");
 
 #elif _WIN32
-    // windows code goes here
-#else
 
+    add_line("format PE64 GUI; at 0xfe0000");
+    add_line("include 'C:\\reverse\\fasm\\include\\WIN64AX.INC'");
+    add_line("section '.code' code readable writable executable");
+    add_line("entry start");
+    // windows code goes here
 #endif
 
     for(auto&& line : code)
@@ -51,15 +54,23 @@ std::vector<std::string> createCodeForExecutable(std::vector<std::string> const&
         add_line(line);
     }
 
+//#ifdef _WIN32
+//    add_line(".end start");
+//#endif
+
     if(!data.empty())
     {
-        add_line("section '.data' executable writeable");
+//        add_line("section '.data' executable writeable");
 
         for(auto&& line : data)
         {
             add_line(line);
         }
     }
+#ifdef _WIN32
+//    add_line(".end start");
+#endif
+
 
     return ret;
 }
@@ -81,8 +92,13 @@ void build(std::string const& filename)
     std::string fasm = "fasm " + name + ".asm";
     system(fasm.c_str());
 
+    std::string ld;
+
+#ifdef __linux__
     std::string ld = "ld " + name + ".o " + "-o " + name + ".out";
-    system("ld shellcode.o -o shellcode.out");
+    system(ld.c_str());
+#endif
+
 }
 
 std::vector<byte> readFile(const std::string& file) {
