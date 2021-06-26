@@ -107,8 +107,6 @@ void build(std::string const& filename)
     std::string fasm = "fasm " + name + ".asm";
     system(fasm.c_str());
 
-    std::string ld;
-
 #ifdef __linux__
     std::string ld = "ld " + name + ".o " + "-o " + name + ".out";
     system(ld.c_str());
