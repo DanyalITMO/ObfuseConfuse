@@ -25,6 +25,13 @@ std::vector<std::string> createCodeFor64(std::vector<std::string> const& code )
     ret.insert(std::begin(ret),"use64");
     return ret;
 }
+std::vector<std::string> createCodeFor64(ProgramListing const& listing )
+{
+    auto total_listing = listing.code_before_start;
+    total_listing.insert(std::end(total_listing), std::begin(listing.code_after_start), std::end(listing.code_after_start));
+    total_listing.insert(std::end(total_listing), std::begin(listing.data), std::end(listing.data));
+    return createCodeFor64(total_listing);
+}
 
 std::vector<std::string> createCodeForExecutable(ProgramListing const& listing, bool place_data_in_code)
 {
@@ -165,6 +172,7 @@ std::vector<std::string> decodeBin(std::vector<byte> const& bin)
 
     // Initialize decoder context
     ZydisDecoder decoder;
+//    ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_COMPAT_32, ZYDIS_ADDRESS_WIDTH_32);
     ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
 
     // Initialize formatter. Only required when you actually plan to do instruction

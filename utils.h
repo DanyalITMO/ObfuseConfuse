@@ -11,6 +11,8 @@
 
 std::vector<std::string> createCodeFor64(std::vector<std::string> const&  code );
 
+std::vector<std::string> createCodeFor64(ProgramListing const&  listing );
+
 std::vector<std::string> createCodeForExecutable(ProgramListing const& listing, bool place_data_in_code = false);
 
 void fasm(std::string const& filename);

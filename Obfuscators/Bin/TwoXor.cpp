@@ -67,6 +67,7 @@ ProgramListing TwoXor::addAsmStub(const std::vector<byte>& payload)
     ProgramListing listing;
 //    std::vector<std::string> code;
     auto&& code_before = listing.code_before_start;
+    code_before.emplace_back("jmp short encode_setup");
     code_before.emplace_back("keys.xor1 equ " + std::to_string(key1));
     code_before.emplace_back("keys.xor2 equ " + std::to_string(key2));
     code_before.emplace_back("xor_keys equ keys.xor1 xor keys.xor2");
